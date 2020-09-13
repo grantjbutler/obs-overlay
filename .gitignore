@@ -9,4 +9,5 @@ obsdeps/
 build-xcode/
 .vscode
 .idea
-osx-deps-2018-08-09.tar.gz
+osx-deps-2020-04-24.tar.gz
+Packages.pkg

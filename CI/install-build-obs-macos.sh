@@ -21,8 +21,8 @@ if [ "${HAS_GIT}" = "" ]; then
 fi
 
 echo "[obs-overlay-plugin] Downloading and unpacking OBS dependencies"
-wget --quiet --retry-connrefused --waitretry=1 https://obs-nightly.s3.amazonaws.com/osx-deps-2018-08-09.tar.gz
-tar -xf ./osx-deps-2018-08-09.tar.gz -C /tmp
+wget --quiet --retry-connrefused --waitretry=1 https://github.com/obsproject/obs-deps/releases/download/2020-04-24/osx-deps-2020-04-24.tar.gz
+tar -xf ./osx-deps-2020-04-24.tar.gz -C /tmp
 
 # Build obs-studio
 cd ..
@@ -31,11 +31,11 @@ git clone https://github.com/obsproject/obs-studio
 cd obs-studio
 # OBSLatestTag=$(git describe --tags --abbrev=0)
 # git checkout $OBSLatestTag
-git checkout 24.0.6
+git checkout 25.0.8
 mkdir build && cd build
 echo "[obs-overlay-plugin] Building obs-studio.."
 cmake .. \
-	-DCMAKE_OSX_DEPLOYMENT_TARGET=10.11 \
+	-DCMAKE_OSX_DEPLOYMENT_TARGET=10.13 \
 	-DDISABLE_PLUGINS=true \
     -DENABLE_SCRIPTING=0 \
 	-DDepsPath=/tmp/obsdeps \
