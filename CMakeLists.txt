@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.2)
-project(obs-ios-camera-source)
+project(obs-overlay)
 
 set(CMAKE_PREFIX_PATH "${QTDIR}")
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
@@ -12,10 +12,6 @@ if (WIN32 OR APPLE)
 endif()
 
 find_package(LibObs REQUIRED)
-
-find_package(FFmpeg REQUIRED COMPONENTS avcodec avutil)
-# find_ffmpeg_library(avcodec)
-# find_ffmpeg_library(avutil)
 
 if(CMAKE_SIZEOF_VOID_P EQUAL 8)
 	set(ARCH 64)
@@ -181,63 +177,20 @@ target_link_libraries(portal
 
 set(ENABLE_PROGRAMS false)
 
-set(obs-ios-camera-source_SOURCES
-	src/obs-ios-camera-plugin.cpp
-	src/obs-ios-camera-source.cpp
-	src/ffmpeg-decode.c
-	src/VideoDecoder.cpp
-	src/FFMpegVideoDecoder.cpp
-	src/FFMpegAudioDecoder.cpp
+set(obs-overlay_SOURCES
+	src/obs-overlay-plugin.cpp
+	src/obs-overlay-source.cpp
 	src/Thread.cpp)
 
-set(obs-ios-camera-source_HEADERS
-	src/obs-ios-camera-source.h
-	src/ffmpeg-decode.h
-	src/VideoDecoder.h
-	src/FFMpegVideoDecoder.h
-	src/FFMpegAudioDecoder.h
-	src/Thread.hpp
-	src/Queue.hpp)
-
-if(APPLE)
-
-	message("Linking Video Toolbox")
-
-	find_library(AVFOUNDATION AVFoundation)
-	find_library(COCOA Cocoa)
-	find_library(COREFOUNDATION CoreFoundation)
-	find_library(COREMEDIA CoreMedia)	
-	find_library(COREVIDEO CoreVideo)
-	find_library(COREMEDIAIO CoreMediaIO)
-	find_library(VIDEOTOOLBOX VideoToolbox)
-
-	include_directories(${AVFOUNDATION}
-		${COCOA}
-		${COREFOUNDATION}
-		${COREMEDIA}
-		${COREVIDEO}
-		${COREMEDIAIO}
-		${VIDEOTOOLBOX}
-		${COCOA})
-
-	list(APPEND obs-ios-camera-source_SOURCES
-		src/VideoToolboxVideoDecoder.cpp)
-	
-	list(APPEND obs-ios-camera-source_HEADERS
-		src/VideoToolboxVideoDecoder.h)
-
-	add_definitions(-fobjc-arc)
-
-
-endif()
+set(obs-overlay_HEADERS
+	src/obs-overlay-source.h
+	src/Thread.hpp)
 
 # --- Platform-independent build settings ---
-add_library(obs-ios-camera-source MODULE 
-	${obs-ios-camera-source_SOURCES}
-	${obs-ios-camera-source_HEADERS})
+add_library(obs-overlay MODULE 
+	${obs-overlay_SOURCES}
+	${obs-overlay_HEADERS})
 
-
-#find_package(FFmpeg REQUIRED COMPONENTS avcodec avutil)
 
 include_directories( 
 	"${LIBOBS_INCLUDE_DIR}/../UI/obs-frontend-api"
@@ -254,10 +207,9 @@ if(MSVC)
 endif()
 
 
-target_link_libraries(obs-ios-camera-source 
+target_link_libraries(obs-overlay 
 	libobs
 	portal
-	${FFMPEG_LIBRARIES}
 )
  
 # --- End of section ---
@@ -287,67 +239,67 @@ if(WIN32)
 		"${LIBOBS_INCLUDE_DIR}/../${OBS_BUILDDIR_ARCH}/UI"
 	)
 
-	# target_link_libraries(obs-ios-camera-source
+	# target_link_libraries(obs-overlay
 		# "${OBS_FRONTEND_LIB}")
 
 	# --- Release package helper ---
 	# The "release" folder has a structure similar OBS' one on Windows
 	set(RELEASE_DIR "${PROJECT_SOURCE_DIR}/release")
 
-	add_custom_command(TARGET obs-ios-camera-source POST_BUILD
+	add_custom_command(TARGET obs-overlay POST_BUILD
 		# If config is Release, package release files
 		COMMAND if $<CONFIG:Release>==1 (
 			"${CMAKE_COMMAND}" -E make_directory
-				"${RELEASE_DIR}/data/obs-plugins/obs-ios-camera-source"
+				"${RELEASE_DIR}/data/obs-plugins/obs-overlay"
 				"${RELEASE_DIR}/obs-plugins/${OBS_ARCH_NAME}")
 
 		COMMAND if $<CONFIG:Release>==1 (
 			"${CMAKE_COMMAND}" -E copy_directory
 				"${PROJECT_SOURCE_DIR}/data"
-				"${RELEASE_DIR}/data/obs-plugins/obs-ios-camera-source")
+				"${RELEASE_DIR}/data/obs-plugins/obs-overlay")
 
 		COMMAND if $<CONFIG:Release>==1 (
 			"${CMAKE_COMMAND}" -E copy
-				"$<TARGET_FILE:obs-ios-camera-source>"
+				"$<TARGET_FILE:obs-overlay>"
 				"${RELEASE_DIR}/obs-plugins/${OBS_ARCH_NAME}")
 				
 
         # If config is RelWithDebInfo, package release files
 		COMMAND if $<CONFIG:RelWithDebInfo>==1 (
 			"${CMAKE_COMMAND}" -E make_directory
-			    "${RELEASE_DIR}/data/obs-plugins/obs-ios-camera-source"
+			    "${RELEASE_DIR}/data/obs-plugins/obs-overlay"
 			    "${RELEASE_DIR}/obs-plugins/${OBS_ARCH_NAME}")
 
 		COMMAND if $<CONFIG:RelWithDebInfo>==1 (
             "${CMAKE_COMMAND}" -E copy_directory
 			    "${PROJECT_SOURCE_DIR}/data"
-			    "${RELEASE_DIR}/data/obs-plugins/obs-ios-camera-source")
+			    "${RELEASE_DIR}/data/obs-plugins/obs-overlay")
 
 		COMMAND if $<CONFIG:RelWithDebInfo>==1 (
             "${CMAKE_COMMAND}" -E copy
-			    "$<TARGET_FILE:obs-ios-camera-source>"
+			    "$<TARGET_FILE:obs-overlay>"
 			    "${RELEASE_DIR}/obs-plugins/${OBS_ARCH_NAME}")
 
 		COMMAND if $<CONFIG:RelWithDebInfo>==1 (
             "${CMAKE_COMMAND}" -E copy
-			    "$<TARGET_PDB_FILE:obs-ios-camera-source>"
+			    "$<TARGET_PDB_FILE:obs-overlay>"
 			    "${RELEASE_DIR}/obs-plugins/${OBS_ARCH_NAME}")
 
 
 		# Copy to obs-studio dev environment for immediate testing
 		COMMAND if $<CONFIG:Debug>==1 (
 			"${CMAKE_COMMAND}" -E copy
-				"$<TARGET_FILE:obs-ios-camera-source>"
+				"$<TARGET_FILE:obs-overlay>"
 				"${LIBOBS_INCLUDE_DIR}/../${OBS_BUILDDIR_ARCH}/rundir/$<CONFIG>/obs-plugins/${OBS_ARCH_NAME}")
 
 		COMMAND if $<CONFIG:Debug>==1 (
 			"${CMAKE_COMMAND}" -E make_directory
-				"${LIBOBS_INCLUDE_DIR}/../${OBS_BUILDDIR_ARCH}/rundir/$<CONFIG>/data/obs-plugins/obs-ios-camera-source")
+				"${LIBOBS_INCLUDE_DIR}/../${OBS_BUILDDIR_ARCH}/rundir/$<CONFIG>/data/obs-plugins/obs-overlay")
 
 		COMMAND if $<CONFIG:Debug>==1 (
 			"${CMAKE_COMMAND}" -E copy_directory
 				"${PROJECT_SOURCE_DIR}/data"
-				"${LIBOBS_INCLUDE_DIR}/../${OBS_BUILDDIR_ARCH}/rundir/$<CONFIG>/data/obs-plugins/obs-ios-camera-source")
+				"${LIBOBS_INCLUDE_DIR}/../${OBS_BUILDDIR_ARCH}/rundir/$<CONFIG>/data/obs-plugins/obs-overlay")
 	)
 	# --- End of sub-section ---
 
@@ -360,15 +312,7 @@ if(APPLE)
 	set(CMAKE_CXX_FLAGS "-Wall -Wextra -Wno-unused-function -Werror-implicit-function-declaration -Wno-missing-field-initializers ${CMAKE_CXX_FLAGS} -fno-strict-aliasing")
 	set(CMAKE_C_FLAGS "-Wall -Wextra -Wno-unused-function -Werror-implicit-function-declaration -Wno-missing-braces -Wno-missing-field-initializers ${CMAKE_C_FLAGS} -std=gnu99 -fno-strict-aliasing")
 	
-	set_target_properties(obs-ios-camera-source PROPERTIES PREFIX "")
-	target_link_libraries(obs-ios-camera-source "${OBS_FRONTEND_LIB}"
-		${AVFOUNDATION}
-		${COCOA}
-		${COREFOUNDATION}
-		${COREMEDIA}
-		${COREVIDEO}
-		${COREMEDIAIO}
-		${VIDEOTOOLBOX}
-		${COCOA})
+	set_target_properties(obs-overlay PROPERTIES PREFIX "")
+	target_link_libraries(obs-overlay "${OBS_FRONTEND_LIB}")
 endif()
 # -- End of section --
