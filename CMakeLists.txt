@@ -179,12 +179,10 @@ set(ENABLE_PROGRAMS false)
 
 set(obs-overlay_SOURCES
 	src/obs-overlay-plugin.cpp
-	src/obs-overlay-source.cpp
-	src/Thread.cpp)
+	src/obs-overlay-source.cpp)
 
 set(obs-overlay_HEADERS
-	src/obs-overlay-source.h
-	src/Thread.hpp)
+	src/obs-overlay-source.h)
 
 # --- Platform-independent build settings ---
 add_library(obs-overlay MODULE 
