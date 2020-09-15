@@ -1,6 +1,8 @@
 /*
- obs-ios-camera-source
- Copyright (C) 2018    Will Townsend <will@townsend.io>
+ obs-overlay
+ Copyright (C) 2020 Grant Butler
+ 
+ Forked and modified from obs-ios-camera-source, created by Will Townsend.
 
  This program is free software; you can redistribute it and/or modify
  it under the terms of the GNU General Public License as published by
@@ -22,48 +24,25 @@
 #include <usbmuxd.h>
 #include <obs-avc.h>
 
-#include "FFMpegVideoDecoder.h"
-#include "FFMpegAudioDecoder.h"
-#ifdef __APPLE__
-    #include "VideoToolboxVideoDecoder.h"
-#endif
-
-#define TEXT_INPUT_NAME obs_module_text("OBSIOSCamera.Title")
-
 #define SETTING_DEVICE_UUID "setting_device_uuid"
 #define SETTING_DEVICE_UUID_NONE_VALUE "null"
-#define SETTING_PROP_LATENCY "latency"
-#define SETTING_PROP_LATENCY_NORMAL 0
-#define SETTING_PROP_LATENCY_LOW 1
 
-#define SETTING_PROP_HARDWARE_DECODER "setting_use_hw_decoder"
-
-class IOSCameraInput: public portal::PortalDelegate
+class OverlayInput: public portal::PortalDelegate
 {
 public:
     obs_source_t *source;
     obs_data_t *settings;
 
     bool active = false;
-    obs_source_frame frame;
     std::string deviceUUID;
 
     std::shared_ptr<portal::Portal> sharedPortal;
     portal::Portal portal;
 
-    VideoDecoder *videoDecoder;
-#ifdef __APPLE__
-    VideoToolboxDecoder videoToolboxVideoDecoder;
-#endif
-    FFMpegVideoDecoder ffmpegVideoDecoder;
-    FFMpegAudioDecoder audioDecoder;
-
     IOSCameraInput(obs_source_t *source_, obs_data_t *settings)
     : source(source_), settings(settings), portal(this)
     {
         blog(LOG_INFO, "Creating instance of plugin!");
-
-        memset(&frame, 0, sizeof(frame));
 
         /// In order for the internal Portal Delegates to work there
         /// must be a shared_ptr to the instance of Portal.
@@ -75,19 +54,6 @@ public:
         auto null_deleter = [](portal::Portal *portal) { UNUSED_PARAMETER(portal); };
         auto portalReference = std::shared_ptr<portal::Portal>(&portal, null_deleter);
         sharedPortal = portalReference;
-
-#ifdef __APPLE__
-        videoToolboxVideoDecoder.source = source;
-        videoToolboxVideoDecoder.Init();
-#endif
-
-        ffmpegVideoDecoder.source = source;
-        ffmpegVideoDecoder.Init();
-
-        audioDecoder.source = source;
-        audioDecoder.Init();
-
-        videoDecoder = &ffmpegVideoDecoder;
 
         loadSettings(settings);
         active = true;
@@ -141,12 +107,6 @@ public:
 
         blog(LOG_INFO, "Connecting to device");
 
-        // flush the decoders 
-        ffmpegVideoDecoder.Flush();
-#ifdef __APPLE__
-        videoToolboxVideoDecoder.Flush();
-#endif
-
         // Find device
         auto devices = portal.getDevices();
         deviceUUID = std::string(uuid);
@@ -169,15 +129,7 @@ public:
     {
         try
         {
-            switch (type) {
-                case 101: // Video Packet
-                    this->videoDecoder->Input(packet, type, tag);
-                    break;
-                case 102: // Audio Packet
-                    this->audioDecoder.Input(packet, type, tag);
-                default:
-                    break;
-            }
+
         }
         catch (...)
         {
@@ -237,7 +189,7 @@ static bool refresh_devices(obs_properties_t *props, obs_property_t *p, void *da
 {
     UNUSED_PARAMETER(p);
 
-    auto cameraInput =  reinterpret_cast<IOSCameraInput*>(data);
+    auto cameraInput = reinterpret_cast<IOSCameraInput*>(data);
 
     cameraInput->portal.reloadDeviceList();
     auto devices = cameraInput->portal.getDevices();
@@ -283,7 +235,7 @@ static bool reconnect_to_device(obs_properties_t *props, obs_property_t *p, void
 
 static const char *GetIOSCameraInputName(void *)
 {
-    return TEXT_INPUT_NAME;
+    return obs_module_text("OBSOverlay.Title");
 }
 
 static void *CreateIOSCameraInput(obs_data_t *settings, obs_source_t *source)
@@ -335,20 +287,6 @@ static obs_properties_t *GetIOSCameraProperties(void *data)
     obs_properties_add_button(ppts, "setting_refresh_devices", "Refresh Devices", refresh_devices);
     obs_properties_add_button(ppts, "setting_button_connect_to_device", "Reconnect to Device", reconnect_to_device);
 
-    obs_property_t* latency_modes = obs_properties_add_list(ppts, SETTING_PROP_LATENCY, obs_module_text("OBSIOSCamera.Settings.Latency"), OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
-
-    obs_property_list_add_int(latency_modes,
-        obs_module_text("OBSIOSCamera.Settings.Latency.Normal"),
-        SETTING_PROP_LATENCY_NORMAL);
-    obs_property_list_add_int(latency_modes,
-        obs_module_text("OBSIOSCamera.Settings.Latency.Low"),
-        SETTING_PROP_LATENCY_LOW);
-
-#ifdef __APPLE__
-    obs_properties_add_bool(ppts, SETTING_PROP_HARDWARE_DECODER,
-        obs_module_text("OBSIOSCamera.Settings.UseHardwareDecoder"));
-#endif
-
     return ppts;
 }
 
@@ -356,10 +294,6 @@ static obs_properties_t *GetIOSCameraProperties(void *data)
 static void GetIOSCameraDefaults(obs_data_t *settings)
 {
     obs_data_set_default_string(settings, SETTING_DEVICE_UUID, "");
-    obs_data_set_default_int(settings, SETTING_PROP_LATENCY, SETTING_PROP_LATENCY_LOW);
-#ifdef __APPLE__
-    obs_data_set_default_bool(settings, SETTING_PROP_HARDWARE_DECODER, false);
-#endif
 }
 
 static void SaveIOSCameraInput(void *data, obs_data_t *settings)
@@ -372,35 +306,17 @@ static void UpdateIOSCameraInput(void *data, obs_data_t *settings)
 {
     IOSCameraInput *input = reinterpret_cast<IOSCameraInput*>(data);
 
-    // Clear the video frame when a setting changes
-    obs_source_output_video(input->source, NULL);
-
     // Connect to the device
     auto uuid = obs_data_get_string(settings, SETTING_DEVICE_UUID);
     input->connectToDevice(uuid, false);
 
-    const bool is_unbuffered =
-        (obs_data_get_int(settings, SETTING_PROP_LATENCY) == SETTING_PROP_LATENCY_LOW);
-    obs_source_set_async_unbuffered(input->source, is_unbuffered);
-
-#ifdef __APPLE__
-    bool useHardwareDecoder = obs_data_get_bool(settings, SETTING_PROP_HARDWARE_DECODER);
-
-    if (useHardwareDecoder) {
-        input->videoDecoder = &input->videoToolboxVideoDecoder;
-    } else {
-        input->videoDecoder = &input->ffmpegVideoDecoder;
-    }
-#endif
-
 }
 
-void RegisterIOSCameraSource()
-{
+void register_overlay_source(void) {
     obs_source_info info = {};
-    info.id              = "ios-camera-source";
+    info.id              = "overlay-source";
     info.type            = OBS_SOURCE_TYPE_INPUT;
-    info.output_flags    = OBS_SOURCE_ASYNC_VIDEO | OBS_SOURCE_AUDIO;
+    info.output_flags    = OBS_SOURCE_VIDEO;
     info.get_name        = GetIOSCameraInputName;
 
     info.create          = CreateIOSCameraInput;
