@@ -18,6 +18,9 @@
  with this program. If not, see <https://www.gnu.org/licenses/>
  */
 
+#include <graphics/graphics.h>
+#include <graphics/math-defs.h>
+#include <util/platform.h>
 #include <obs-module.h>
 #include <chrono>
 #include <Portal.hpp>
@@ -33,13 +36,16 @@ public:
     obs_source_t *source;
     obs_data_t *settings;
 
+    gs_texture_t *tex = nullptr;
+    uint8_t *bits = nullptr;
+
     bool active = false;
     std::string deviceUUID;
 
     std::shared_ptr<portal::Portal> sharedPortal;
     portal::Portal portal;
 
-    IOSCameraInput(obs_source_t *source_, obs_data_t *settings)
+    OverlayInput(obs_source_t *source_, obs_data_t *settings)
     : source(source_), settings(settings), portal(this)
     {
         blog(LOG_INFO, "Creating instance of plugin!");
@@ -59,9 +65,17 @@ public:
         active = true;
     }
 
-    inline ~IOSCameraInput()
+    inline ~OverlayInput()
     {
+		if (tex) {
+			obs_enter_graphics();
+			gs_texture_destroy(tex);
+			obs_leave_graphics();
+		}
 
+        if (bits) {
+            free(bits);
+        }
     }
 
     void activate() {
@@ -80,6 +94,43 @@ public:
         blog(LOG_INFO, "Loaded Settings: Connecting to device");
 
         connectToDevice(device_uuid, false);
+    }
+
+    void update(obs_data_t *s) {
+        if (!tex && bits) {
+            obs_enter_graphics();
+            if (tex)
+                gs_texture_destroy(tex);
+
+            const uint8_t *data = bits;
+            tex = gs_texture_create(1920, 1080, GS_RGBA, 1, &data,
+                        GS_DYNAMIC);
+
+            obs_leave_graphics();
+        } else if (tex) {
+            obs_enter_graphics();
+            gs_texture_set_image(tex, bits, 1920 * 4, false);
+            obs_leave_graphics();
+        }
+    }
+
+    void render() {
+        if (!tex) {
+    		return;
+        }
+
+        gs_effect_t *effect = obs_get_base_effect(OBS_EFFECT_DEFAULT);
+        gs_technique_t *tech = gs_effect_get_technique(effect, "Draw");
+
+        gs_technique_begin(tech);
+        gs_technique_begin_pass(tech, 0);
+
+        gs_effect_set_texture(gs_effect_get_param_by_name(effect, "image"),
+                    tex);
+        gs_draw_sprite(tex, 0, 1920, 1080);
+
+        gs_technique_end_pass(tech);
+        gs_technique_end(tech);
     }
 
     void reconnectToDevice()
@@ -129,7 +180,13 @@ public:
     {
         try
         {
+            if (type == 101) {
+                if (!bits) {
+                    bits = (uint8_t *)::malloc(sizeof(uint8_t) * 1920 * 1080 * 4);
+                }
 
+                ::memcpy(bits, packet.data(), 1920 * 1080 * 4);
+            }
         }
         catch (...)
         {
@@ -189,7 +246,7 @@ static bool refresh_devices(obs_properties_t *props, obs_property_t *p, void *da
 {
     UNUSED_PARAMETER(p);
 
-    auto cameraInput = reinterpret_cast<IOSCameraInput*>(data);
+    auto cameraInput = reinterpret_cast<OverlayInput*>(data);
 
     cameraInput->portal.reloadDeviceList();
     auto devices = cameraInput->portal.getDevices();
@@ -225,7 +282,7 @@ static bool reconnect_to_device(obs_properties_t *props, obs_property_t *p, void
     UNUSED_PARAMETER(props);
     UNUSED_PARAMETER(p);
 
-    auto cameraInput =  reinterpret_cast<IOSCameraInput* >(data);
+    auto cameraInput = reinterpret_cast<OverlayInput* >(data);
     cameraInput->reconnectToDevice();
 
     return false;
@@ -240,11 +297,11 @@ static const char *GetIOSCameraInputName(void *)
 
 static void *CreateIOSCameraInput(obs_data_t *settings, obs_source_t *source)
 {
-    IOSCameraInput *cameraInput = nullptr;
+    OverlayInput *cameraInput = nullptr;
 
     try
     {
-        cameraInput = new IOSCameraInput(source, settings);
+        cameraInput = new OverlayInput(source, settings);
     }
     catch (const char *error)
     {
@@ -256,18 +313,18 @@ static void *CreateIOSCameraInput(obs_data_t *settings, obs_source_t *source)
 
 static void DestroyIOSCameraInput(void *data)
 {
-    delete reinterpret_cast<IOSCameraInput *>(data);
+    delete reinterpret_cast<OverlayInput *>(data);
 }
 
 static void DeactivateIOSCameraInput(void *data)
 {
-    auto cameraInput =  reinterpret_cast<IOSCameraInput*>(data);
+    auto cameraInput = reinterpret_cast<OverlayInput*>(data);
     cameraInput->deactivate();
 }
 
 static void ActivateIOSCameraInput(void *data)
 {
-    auto cameraInput = reinterpret_cast<IOSCameraInput*>(data);
+    auto cameraInput = reinterpret_cast<OverlayInput*>(data);
     cameraInput->activate();
 }
 
@@ -304,12 +361,26 @@ static void SaveIOSCameraInput(void *data, obs_data_t *settings)
 
 static void UpdateIOSCameraInput(void *data, obs_data_t *settings)
 {
-    IOSCameraInput *input = reinterpret_cast<IOSCameraInput*>(data);
+    OverlayInput *input = reinterpret_cast<OverlayInput*>(data);
 
     // Connect to the device
     auto uuid = obs_data_get_string(settings, SETTING_DEVICE_UUID);
     input->connectToDevice(uuid, false);
 
+    input->update(settings);
+}
+
+static uint32_t GetWidthOverlayInput(void *data) {
+    return 1920;
+}
+
+static uint32_t GetHeightOverlayInput(void *data) {
+    return 1080;
+}
+
+static void RenderOverlayInput(void *data, gs_effect_t *effect) {
+    OverlayInput *input = reinterpret_cast<OverlayInput*>(data);
+    input->render();
 }
 
 void register_overlay_source(void) {
@@ -329,5 +400,11 @@ void register_overlay_source(void) {
     info.get_properties  = GetIOSCameraProperties;
     info.save            = SaveIOSCameraInput;
     info.update          = UpdateIOSCameraInput;
+
+    info.get_width = GetWidthOverlayInput;
+	info.get_height = GetHeightOverlayInput;
+    info.video_render = RenderOverlayInput;
+
+    info.icon_type       = OBS_ICON_TYPE_IMAGE;
     obs_register_source(&info);
 }
