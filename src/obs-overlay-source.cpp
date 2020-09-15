@@ -197,7 +197,7 @@ static bool refresh_devices(obs_properties_t *props, obs_property_t *p, void *da
     obs_property_t *dev_list = obs_properties_get(props, SETTING_DEVICE_UUID);
     obs_property_list_clear(dev_list);
 
-    obs_property_list_add_string(dev_list, "None", SETTING_DEVICE_UUID_NONE_VALUE);
+    obs_property_list_add_string(dev_list, obs_module_text("OBSOverlay.None"), SETTING_DEVICE_UUID_NONE_VALUE);
 
     int index = 1;
     std::for_each(devices.begin(), devices.end(), [dev_list, &index](std::map<int, portal::Device::shared_ptr>::value_type &deviceMap) {
@@ -277,15 +277,15 @@ static obs_properties_t *GetIOSCameraProperties(void *data)
     obs_properties_t *ppts = obs_properties_create();
 
     obs_property_t *dev_list = obs_properties_add_list(ppts, SETTING_DEVICE_UUID,
-                                                       "iOS Device",
+                                                       obs_module_text("OBSOverlay.iOSDevice"),
                                                        OBS_COMBO_TYPE_LIST,
                                                        OBS_COMBO_FORMAT_STRING);
     obs_property_list_add_string(dev_list, "", "");
 
     refresh_devices(ppts, dev_list, data);
 
-    obs_properties_add_button(ppts, "setting_refresh_devices", "Refresh Devices", refresh_devices);
-    obs_properties_add_button(ppts, "setting_button_connect_to_device", "Reconnect to Device", reconnect_to_device);
+    obs_properties_add_button(ppts, "setting_refresh_devices", obs_module_text("OBSOverlay.RefreshDevices"), refresh_devices);
+    obs_properties_add_button(ppts, "setting_button_connect_to_device", obs_module_text("OBSOverlay.ReconnectToDevice"), reconnect_to_device);
 
     return ppts;
 }
