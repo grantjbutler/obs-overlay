@@ -102,6 +102,7 @@ public:
         pthread_mutex_lock(&bits_mutex);
         
         if (!bits) {
+            pthread_mutex_unlock(&bits_mutex);
             return;
         }
 
