@@ -21,6 +21,7 @@
 #include <graphics/graphics.h>
 #include <graphics/math-defs.h>
 #include <util/platform.h>
+#include <util/bmem.h>
 #include <obs-module.h>
 #include <chrono>
 #include <Portal.hpp>
@@ -38,6 +39,7 @@ public:
 
     gs_texture_t *tex = nullptr;
     uint8_t *bits = nullptr;
+    pthread_mutex_t bits_mutex;
 
     bool active = false;
     std::string deviceUUID;
@@ -74,7 +76,7 @@ public:
 		}
 
         if (bits) {
-            free(bits);
+            bfree(bits);
         }
     }
 
@@ -96,11 +98,15 @@ public:
         connectToDevice(device_uuid, false);
     }
 
-    void update(obs_data_t *s) {
-        if (!tex && bits) {
+    void update() {
+        pthread_mutex_lock(&bits_mutex);
+        
+        if (!bits) {
+            return;
+        }
+
+        if (!tex) {
             obs_enter_graphics();
-            if (tex)
-                gs_texture_destroy(tex);
 
             const uint8_t *data = bits;
             tex = gs_texture_create(1920, 1080, GS_RGBA, 1, &data,
@@ -112,6 +118,8 @@ public:
             gs_texture_set_image(tex, bits, 1920 * 4, false);
             obs_leave_graphics();
         }
+
+        pthread_mutex_unlock(&bits_mutex);
     }
 
     void render() {
@@ -178,14 +186,21 @@ public:
 
     void portalDeviceDidReceivePacket(std::vector<char> packet, int type, int tag)
     {
+        UNUSED_PARAMETER(packet);
+        UNUSED_PARAMETER(tag);
+        
         try
         {
             if (type == 101) {
+                pthread_mutex_lock(&bits_mutex);
+
                 if (!bits) {
-                    bits = (uint8_t *)::malloc(sizeof(uint8_t) * 1920 * 1080 * 4);
+                    bits = (uint8_t *)::bzalloc(sizeof(uint8_t) * 1920 * 1080 * 4);
                 }
 
-                ::memcpy(bits, packet.data(), 1920 * 1080 * 4);
+                ::memcpy(bits, packet.data(), sizeof(uint8_t) * 1920 * 1080 * 4);
+
+                pthread_mutex_unlock(&bits_mutex);
             }
         }
         catch (...)
@@ -347,7 +362,6 @@ static obs_properties_t *GetIOSCameraProperties(void *data)
     return ppts;
 }
 
-
 static void GetIOSCameraDefaults(obs_data_t *settings)
 {
     obs_data_set_default_string(settings, SETTING_DEVICE_UUID, "");
@@ -366,19 +380,30 @@ static void UpdateIOSCameraInput(void *data, obs_data_t *settings)
     // Connect to the device
     auto uuid = obs_data_get_string(settings, SETTING_DEVICE_UUID);
     input->connectToDevice(uuid, false);
-
-    input->update(settings);
 }
 
 static uint32_t GetWidthOverlayInput(void *data) {
+    UNUSED_PARAMETER(data);
+    
     return 1920;
 }
 
 static uint32_t GetHeightOverlayInput(void *data) {
+    UNUSED_PARAMETER(data);
+
     return 1080;
 }
 
+static void TickOverlayInput(void *data, float seconds) {
+    UNUSED_PARAMETER(seconds);
+    
+    OverlayInput *input = reinterpret_cast<OverlayInput*>(data);
+    input->update();
+}
+
 static void RenderOverlayInput(void *data, gs_effect_t *effect) {
+    UNUSED_PARAMETER(effect);
+
     OverlayInput *input = reinterpret_cast<OverlayInput*>(data);
     input->render();
 }
@@ -387,7 +412,7 @@ void register_overlay_source(void) {
     obs_source_info info = {};
     info.id              = "overlay-source";
     info.type            = OBS_SOURCE_TYPE_INPUT;
-    info.output_flags    = OBS_SOURCE_VIDEO;
+    info.output_flags    = OBS_SOURCE_VIDEO | OBS_SOURCE_CUSTOM_DRAW;
     info.get_name        = GetIOSCameraInputName;
 
     info.create          = CreateIOSCameraInput;
@@ -403,6 +428,7 @@ void register_overlay_source(void) {
 
     info.get_width = GetWidthOverlayInput;
 	info.get_height = GetHeightOverlayInput;
+    info.video_tick = TickOverlayInput;
     info.video_render = RenderOverlayInput;
 
     info.icon_type       = OBS_ICON_TYPE_IMAGE;
